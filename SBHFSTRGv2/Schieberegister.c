@@ -2,7 +2,9 @@
  * Schieberegister.c
  *
  * Created: 24.12.2013 18:51:45
- *  Author: Christian
+ *  Author: Christian Flach
+ *
+ * Siehe http://www.mikrocontroller.net/attachment/190781/com74hc595.c
  */ 
 
 #include <avr/io.h>
