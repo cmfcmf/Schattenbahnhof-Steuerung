@@ -63,20 +63,6 @@ static void readTracks (void) {
 			gleise[i].current = false;
 		}
 	}
-	/*
-	// Eingangsoptokoppler
-	for (uint8_t i = 0; i < ANZAHL_EINGANGSGLEISE; i++) {
-		bool zug;
-		zug = ZUG(i);
-
-		if (zug == false && gleise[i].old == true && gleise[i].counter < ENTPRELL_COUNTER) {
-			gleise[i].current = true;
-			} else {
-			gleise[i].counter = 0;
-			gleise[i].current = ZUG(i);
-		}
-	}
-	*/
 }
 
 /**
@@ -311,7 +297,16 @@ void debug (uint8_t z) {return;
 #endif
 
 void steuerung(abschnitt startAbschnitte[], const uint8_t startLen, const uint8_t startStrategie, abschnitt zielAbschnitte[], const uint8_t zielLen, const uint8_t zielStrategie, const uint8_t id) {
-    switch (status[id].action) {
+	const steuerungAction initState = (startLen == 1) ? TRY_TO_CLEAR_ROUTE : WAITING_FOR_NEW_TRAIN;
+	
+	// When this method is called the first time, status[id].action is always WAITING_FOR_NEW_TRAIN.
+	// Make sure to set it to WAITING_FOR_EMPTY_DESTINATION if initState = WAITING_FOR_EMPTY_DESTINATION.
+	if (initState == TRY_TO_CLEAR_ROUTE && status[id].action == WAITING_FOR_NEW_TRAIN) {
+		status[id].action = TRY_TO_CLEAR_ROUTE;
+	}
+	
+	switch (status[id].action) {
+		// This waits for a new train to come.
         case WAITING_FOR_NEW_TRAIN:
 		{
 			int8_t start = belegterStartAbschnitt(startAbschnitte, startLen, startStrategie, id);
@@ -323,11 +318,12 @@ void steuerung(abschnitt startAbschnitte[], const uint8_t startLen, const uint8_
                 status[id].action = WAITING_FOR_EMPTY_DESTINATION;
             }
 		}
+		// Now that a new train has come, it waits for an empty destination.
         case WAITING_FOR_EMPTY_DESTINATION:
         {
 			if (status[id].start == -1) {
-				debug(1);
-				status[id].action = WAITING_FOR_NEW_TRAIN; // ERROR!!!
+				status[id].action = initState;
+				debug(1); // ERROR!!!
 				break;
 			}
 
@@ -340,14 +336,15 @@ void steuerung(abschnitt startAbschnitte[], const uint8_t startLen, const uint8_
 				}
 				startAbschnitte[(status[id].start)].an();
                 status[id].ziel = ziel;
-		        status[id].action = WAITING_FOR_LEAVING_START;
+				status[id].action = WAITING_FOR_LEAVING_START;
 	        }
         }
+		// Now that an empty destination has been found, it waits for the train to leave the start.
         case WAITING_FOR_LEAVING_START:
 			if (*zielAbschnitte[(status[id].ziel)].belegt) {
 				debug(2);
 				startAbschnitte[(status[id].start)].aus();
-				status[id].action = WAITING_FOR_NEW_TRAIN; // ERROR!!!
+				status[id].action = initState; // ERROR!!!
 				break;
 			}
             if (!*startAbschnitte[(status[id].start)].belegt) {
@@ -355,11 +352,35 @@ void steuerung(abschnitt startAbschnitte[], const uint8_t startLen, const uint8_
                 status[id].action = WAITING_FOR_ARRIVAL_AT_DESTINATION;
             }
             break;
+		// Now that the train left the start, it waits for it to arrive at the destination.
         case WAITING_FOR_ARRIVAL_AT_DESTINATION:
             if (*zielAbschnitte[(status[id].ziel)].belegt) {
-	            status[id].action = WAITING_FOR_NEW_TRAIN;
+	            status[id].action = initState;
             }
             break;
+		case TRY_TO_CLEAR_ROUTE:
+		{
+			int8_t ziel = freierZielAbschnitt(zielAbschnitte, zielLen, zielStrategie, id);
+			if (ziel == -1) {
+				break;
+			} else {
+				if (zielAbschnitte[ziel].bevorFahrt != NULL) {
+					zielAbschnitte[ziel].bevorFahrt();
+				}
+				startAbschnitte[0].an();
+				status[id].ziel = ziel;
+				status[id].action = WAITING_FOR_TRAIN_TO_COME_AFTER_ROUTE_IS_FREE;
+			}
+		}
+		case WAITING_FOR_TRAIN_TO_COME_AFTER_ROUTE_IS_FREE:
+		{
+			int8_t start = belegterStartAbschnitt(startAbschnitte, startLen, startStrategie, id);
+			status[id].start = start;
+			if (start != -1) {
+				status[id].action = WAITING_FOR_LEAVING_START;
+			}
+			break;
+		}
         case ERROR:
             break;
     }
